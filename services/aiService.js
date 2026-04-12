@@ -1,13 +1,13 @@
-const OpenAI = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
 const getClient = () => {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
         return null;
     }
 
-    return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 };
 
 const parseJsonSafely = (text) => {
@@ -101,36 +101,24 @@ const generateTaskDraftWithAI = async ({ prompt, category, taskDate }) => {
         return heuristicTaskDraft({ prompt, category, taskDate });
     }
 
-    const input = [
-        {
-            role: 'system',
-            content: 'You generate concise enterprise task drafts. Return only strict JSON.'
-        },
-        {
-            role: 'user',
-            content: `Create a task draft for this request: "${prompt || 'General admin task'}".
+    try {
+        const model = client.getGenerativeModel({ model: GEMINI_MODEL });
+        const input = `Create a task draft for this request: "${prompt || 'General admin task'}".
 Category hint: "${category || 'general'}"
 Due date hint: "${taskDate || 'not provided'}"
 
-Return JSON with keys:
+Return ONLY strict JSON with keys:
 taskTitle (string),
 taskDescription (string),
 category (string),
 suggestedDueDate (YYYY-MM-DD),
 priority (low|medium|high),
-successCriteria (array of 2-4 strings).`
-        }
-    ];
+successCriteria (array of 2-4 strings).`;
 
-    try {
-        const response = await client.responses.create({
-            model: OPENAI_MODEL,
-            input,
-            temperature: 0.3
-        });
-
-        const text = response.output_text || '';
+        const result = await model.generateContent(input);
+        const text = result.response.text();
         const parsed = parseJsonSafely(text);
+
         if (!parsed) {
             return heuristicTaskDraft({ prompt, category, taskDate });
         }
@@ -142,9 +130,10 @@ successCriteria (array of 2-4 strings).`
             suggestedDueDate: parsed.suggestedDueDate || taskDate || toIsoDate(3),
             priority: ['low', 'medium', 'high'].includes(parsed.priority) ? parsed.priority : 'medium',
             successCriteria: Array.isArray(parsed.successCriteria) ? parsed.successCriteria.slice(0, 4) : [],
-            source: 'openai'
+            source: 'gemini'
         };
     } catch (error) {
+        console.error('Gemini generateTaskDraft error:', error);
         return heuristicTaskDraft({ prompt, category, taskDate });
     }
 };
@@ -162,14 +151,10 @@ const recommendAssigneeWithAI = async ({ task, employees }) => {
         };
     });
 
-    const input = [
-        {
-            role: 'system',
-            content: 'You recommend the best assignee for work balancing. Return only strict JSON.'
-        },
-        {
-            role: 'user',
-            content: `Task:
+    try {
+        const model = client.getGenerativeModel({ model: GEMINI_MODEL });
+        const input = `You recommend the best assignee for work balancing. Return ONLY strict JSON.
+Task:
 ${JSON.stringify(task)}
 
 Employees:
@@ -178,18 +163,12 @@ ${JSON.stringify(employeeSummary)}
 Return JSON with keys:
 assignTo (employee firstName),
 confidence (low|medium|high),
-reason (string).`
-        }
-    ];
+reason (string).`;
 
-    try {
-        const response = await client.responses.create({
-            model: OPENAI_MODEL,
-            input,
-            temperature: 0.2
-        });
+        const result = await model.generateContent(input);
+        const text = result.response.text();
+        const parsed = parseJsonSafely(text);
 
-        const parsed = parseJsonSafely(response.output_text || '');
         if (!parsed || !parsed.assignTo) {
             return heuristicAssignee({ task, employees });
         }
@@ -206,9 +185,10 @@ reason (string).`
             confidence: ['low', 'medium', 'high'].includes(parsed.confidence) ? parsed.confidence : 'medium',
             reason: parsed.reason || 'Recommended based on workload and role fit.',
             rankedCandidates: ranked,
-            source: 'openai'
+            source: 'gemini'
         };
     } catch (error) {
+        console.error('Gemini recommendAssignee error:', error);
         return heuristicAssignee({ task, employees });
     }
 };
@@ -265,32 +245,21 @@ const analyzeLeaveRequestWithAI = async ({ leaveType, numberOfDays, reason }) =>
         return heuristicLeaveAnalysis({ leaveType, numberOfDays, reason });
     }
 
-    const input = [
-        {
-            role: 'system',
-            content: 'You analyze leave requests for HR triage. Return only strict JSON.'
-        },
-        {
-            role: 'user',
-            content: `Analyze this leave request.
+    try {
+        const model = client.getGenerativeModel({ model: GEMINI_MODEL });
+        const input = `Analyze this leave request for HR triage. Return ONLY strict JSON.
 leaveType: "${leaveType}"
 numberOfDays: ${numberOfDays}
 reason: "${reason}"
 
 Return JSON with keys:
 risk (low|medium|high),
-summary (string, max 220 chars).`
-        }
-    ];
+summary (string, max 220 chars).`;
 
-    try {
-        const response = await client.responses.create({
-            model: OPENAI_MODEL,
-            input,
-            temperature: 0.2
-        });
+        const result = await model.generateContent(input);
+        const text = result.response.text();
+        const parsed = parseJsonSafely(text);
 
-        const parsed = parseJsonSafely(response.output_text || '');
         if (!parsed) {
             return heuristicLeaveAnalysis({ leaveType, numberOfDays, reason });
         }
@@ -298,9 +267,10 @@ summary (string, max 220 chars).`
         return {
             risk: ['low', 'medium', 'high'].includes(parsed.risk) ? parsed.risk : 'low',
             summary: (parsed.summary || '').slice(0, 220),
-            source: 'openai'
+            source: 'gemini'
         };
     } catch (error) {
+        console.error('Gemini analyzeLeave error:', error);
         return heuristicLeaveAnalysis({ leaveType, numberOfDays, reason });
     }
 };
@@ -346,28 +316,25 @@ const answerDocumentQuestionWithAI = async ({ question, documents }) => {
 
     const compactDocs = (Array.isArray(documents) ? documents : []).map((doc) => ({
         name: doc.name || 'Document',
-        content: (doc.content || '').toString().slice(0, 6000)
+        content: (doc.content || '').toString().slice(0, 8000)
     })).slice(0, 10);
 
-    const input = [
-        {
-            role: 'system',
-            content: 'You are a company document assistant. Answer from provided files only. Return strict JSON.'
-        },
-        {
-            role: 'user',
-            content: `Question: ${question}\n\nDocuments: ${JSON.stringify(compactDocs)}\n\nReturn JSON with keys:\nanswer (string), citations (array of file names).`
-        }
-    ];
-
     try {
-        const response = await client.responses.create({
-            model: OPENAI_MODEL,
-            input,
-            temperature: 0.2
-        });
+        const model = client.getGenerativeModel({ model: GEMINI_MODEL });
+        const input = `You are a company document assistant. Answer the question from provided context only. Return ONLY strict JSON.
+Question: ${question}
 
-        const parsed = parseJsonSafely(response.output_text || '');
+Documents Context:
+${JSON.stringify(compactDocs)}
+
+Return JSON with keys:
+answer (string),
+citations (array of file names).`;
+
+        const result = await model.generateContent(input);
+        const text = result.response.text();
+        const parsed = parseJsonSafely(text);
+
         if (!parsed || !parsed.answer) {
             return heuristicDocumentAnswer({ question, documents });
         }
@@ -375,9 +342,10 @@ const answerDocumentQuestionWithAI = async ({ question, documents }) => {
         return {
             answer: parsed.answer,
             citations: Array.isArray(parsed.citations) ? parsed.citations.slice(0, 5) : [],
-            source: 'openai'
+            source: 'gemini'
         };
     } catch (error) {
+        console.error('Gemini answerDocument error:', error);
         return heuristicDocumentAnswer({ question, documents });
     }
 };

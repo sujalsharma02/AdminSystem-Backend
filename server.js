@@ -8,6 +8,7 @@ const employeeRoutes = require('./routes/employeeRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const leaveRoutes = require('./routes/leaveRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const documentRoutes = require('./routes/documentRoutes');
 
 dotenv.config();
 
