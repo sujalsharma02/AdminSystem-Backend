@@ -1,42 +1,48 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-const protect = async (req, res, next) => {
+const getTokenFromHeader = (req) => {
     const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
-
-    if (!token) {
-        return res.status(401).json({ message: 'Not authorized, token missing' });
+    if (!authHeader.startsWith('Bearer ')) {
+        return '';
     }
 
+    return authHeader.slice(7).trim();
+};
+
+const authenticateToken = async (req, res, next) => {
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findById(decoded.id).select('-password');
+        const token = getTokenFromHeader(req);
+        if (!token) {
+            return res.status(401).json({ message: 'Authorization token is required' });
+        }
+
+        const payload = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(payload.id).select('-password');
 
         if (!user) {
-            return res.status(401).json({ message: 'Not authorized, user not found' });
+            return res.status(401).json({ message: 'Invalid authorization token' });
         }
 
         req.user = user;
-        return next();
+        next();
     } catch (error) {
-        return res.status(401).json({ message: 'Not authorized, token invalid' });
+        return res.status(401).json({ message: 'Authorization failed', error: error.message });
     }
 };
 
-const authorizeRoles = (...allowedRoles) => {
+const requireRoles = (...roles) => {
     return (req, res, next) => {
-        const role = req.user?.role;
+        if (!req.user) {
+            return res.status(401).json({ message: 'Authorization required' });
+        }
 
-        if (!role || !allowedRoles.includes(role)) {
-            return res.status(403).json({ message: 'Forbidden: insufficient role' });
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({ message: 'Insufficient permissions' });
         }
 
         return next();
     };
 };
 
-module.exports = {
-    protect,
-    authorizeRoles
-};
+module.exports = { authenticateToken, requireRoles };

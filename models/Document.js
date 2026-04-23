@@ -3,27 +3,29 @@ const mongoose = require('mongoose');
 const documentSchema = new mongoose.Schema({
     name: {
         type: String,
-        required: true
-    },
-    cloudinaryUrl: {
-        type: String,
-        required: true
+        required: true,
+        trim: true
     },
     content: {
-        type: String, // Storing extracted text for fast AI retrieval
-        required: true
+        type: String,
+        default: ''
     },
-    fileType: {
-        type: String
+    mimeType: {
+        type: String,
+        default: 'text/plain'
     },
-    authorId: {
-        type: String, // Reference to the admin/user who uploaded
-        default: 'admin' 
+    size: {
+        type: Number,
+        default: 0
     },
-    createdAt: {
-        type: Date,
-        default: Date.now
+    uploadedBy: {
+        type: String,
+        default: 'admin'
+    },
+    source: {
+        type: String,
+        default: 'local'
     }
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model('Document', documentSchema);

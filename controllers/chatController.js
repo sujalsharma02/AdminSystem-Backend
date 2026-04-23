@@ -1,72 +1,99 @@
-const MAX_MESSAGES = 200;
-const chatMessages = [];
-const threadMessages = new Map();
+const ChatMessage = require('../models/ChatMessage');
 
-const listMessages = async (req, res) => {
-    return res.json({ message: 'Chat messages', data: chatMessages });
+const toClientMessage = (message) => ({
+    id: message._id.toString(),
+    threadId: message.threadId,
+    scope: message.scope,
+    authorName: message.authorName,
+    authorRole: message.authorRole,
+    authorId: message.authorId ? message.authorId.toString() : null,
+    text: message.text,
+    createdAt: message.createdAt,
+    updatedAt: message.updatedAt
+});
+
+const getTeamMessages = async (req, res) => {
+    try {
+        const messages = await ChatMessage.find({ scope: 'team', threadId: 'team' })
+            .sort({ createdAt: 1 })
+            .lean();
+
+        return res.json({ data: messages.map((message) => ({
+            ...message,
+            id: message._id.toString()
+        })) });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
 };
 
-const postMessage = async (req, res) => {
-    const { text, authorName, authorRole } = req.body || {};
+const createTeamMessage = async (req, res) => {
+    try {
+        const { text, authorName, authorRole, authorId } = req.body || {};
+        if (!text || !text.trim()) {
+            return res.status(400).json({ message: 'Message text is required' });
+        }
 
-    if (!text || !text.trim()) {
-        return res.status(400).json({ message: 'Message text is required' });
+        const message = await ChatMessage.create({
+            threadId: 'team',
+            scope: 'team',
+            authorName: authorName || 'User',
+            authorRole: authorRole || 'employee',
+            authorId: authorId || null,
+            text: text.trim()
+        });
+
+        return res.status(201).json({ data: toClientMessage(message) });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
     }
-
-    const message = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        text: text.trim(),
-        authorName: authorName || 'User',
-        authorRole: authorRole || 'employee',
-        createdAt: new Date().toISOString()
-    };
-
-    chatMessages.push(message);
-    if (chatMessages.length > MAX_MESSAGES) {
-        chatMessages.splice(0, chatMessages.length - MAX_MESSAGES);
-    }
-
-    return res.status(201).json({ message: 'Message posted', data: message });
 };
 
-const listThreadMessages = async (req, res) => {
-    const { threadId } = req.params;
-    if (!threadId) {
-        return res.status(400).json({ message: 'threadId is required' });
+const getDirectMessages = async (req, res) => {
+    try {
+        const { threadId } = req.params;
+        const messages = await ChatMessage.find({ scope: 'direct', threadId })
+            .sort({ createdAt: 1 })
+            .lean();
+
+        return res.json({ data: messages.map((message) => ({
+            ...message,
+            id: message._id.toString()
+        })) });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
     }
-    const messages = threadMessages.get(threadId) || [];
-    return res.json({ message: 'Thread messages', data: messages });
 };
 
-const postThreadMessage = async (req, res) => {
-    const { threadId } = req.params;
-    const { text, authorName, authorRole, authorId } = req.body || {};
+const createDirectMessage = async (req, res) => {
+    try {
+        const { threadId } = req.params;
+        const { text, authorName, authorRole, authorId } = req.body || {};
+        if (!threadId) {
+            return res.status(400).json({ message: 'threadId is required' });
+        }
+        if (!text || !text.trim()) {
+            return res.status(400).json({ message: 'Message text is required' });
+        }
 
-    if (!threadId) {
-        return res.status(400).json({ message: 'threadId is required' });
+        const message = await ChatMessage.create({
+            threadId,
+            scope: 'direct',
+            authorName: authorName || 'User',
+            authorRole: authorRole || 'employee',
+            authorId: authorId || null,
+            text: text.trim()
+        });
+
+        return res.status(201).json({ data: toClientMessage(message) });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
     }
-    if (!text || !text.trim()) {
-        return res.status(400).json({ message: 'Message text is required' });
-    }
-
-    const message = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        threadId,
-        text: text.trim(),
-        authorName: authorName || 'User',
-        authorRole: authorRole || 'employee',
-        authorId: authorId || null,
-        createdAt: new Date().toISOString()
-    };
-
-    const existing = threadMessages.get(threadId) || [];
-    existing.push(message);
-    if (existing.length > MAX_MESSAGES) {
-        existing.splice(0, existing.length - MAX_MESSAGES);
-    }
-    threadMessages.set(threadId, existing);
-
-    return res.status(201).json({ message: 'Thread message posted', data: message });
 };
 
-module.exports = { listMessages, postMessage, listThreadMessages, postThreadMessage };
+module.exports = {
+    getTeamMessages,
+    createTeamMessage,
+    getDirectMessages,
+    createDirectMessage
+};

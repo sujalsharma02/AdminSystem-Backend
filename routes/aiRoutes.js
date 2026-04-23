@@ -1,16 +1,10 @@
 const express = require('express');
-const {
-    generateTaskDraft,
-    recommendAssignee,
-    getWorkloadInsights,
-    askAboutDocuments
-} = require('../controllers/aiController');
-
 const router = express.Router();
+const { generateTask, recommendAssignee, workloadInsights, askDocs } = require('../controllers/aiController');
 
-router.post('/generate-task', generateTaskDraft);
+router.get('/workload-insights', workloadInsights);
+router.post('/generate-task', generateTask);
 router.post('/recommend-assignee', recommendAssignee);
-router.post('/ask-docs', askAboutDocuments);
-router.get('/workload-insights', getWorkloadInsights);
+router.post('/ask-docs', askDocs);
 
 module.exports = router;

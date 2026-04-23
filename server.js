@@ -9,6 +9,8 @@ const aiRoutes = require('./routes/aiRoutes');
 const leaveRoutes = require('./routes/leaveRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const documentRoutes = require('./routes/documentRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const auditRoutes = require('./routes/auditRoutes');
 
 dotenv.config();
 
@@ -74,6 +76,9 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/leaves', leaveRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/audit-logs', auditRoutes);
 
 app.get('/', (req, res) => {
     res.send('API is running...');

@@ -214,6 +214,22 @@ const admin = {
     "role": "admin"
 };
 
+const hr = {
+    "firstName": "Riya",
+    "email": "riya.hr@example.com",
+    "password": "123",
+    "role": "hr",
+    "department": "Human Resources"
+};
+
+const manager = {
+    "firstName": "Mohan",
+    "email": "manager@example.com",
+    "password": "123",
+    "role": "manager",
+    "department": "Operations"
+};
+
 const importData = async () => {
     try {
         await mongoose.connect(process.env.MONGO_URI);
@@ -223,6 +239,8 @@ const importData = async () => {
         // Use create instead of insertMany to trigger pre-save hooks (hashing passwords)
         await User.create(employees);
         await User.create(admin);
+        await User.create(hr);
+        await User.create(manager);
 
         console.log('Data Imported!');
         process.exit();

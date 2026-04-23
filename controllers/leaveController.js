@@ -1,122 +1,167 @@
-const LeaveRequest = require('../models/LeaveRequest');
+const Leave = require('../models/Leave');
 const User = require('../models/User');
-const { analyzeLeaveRequestWithAI } = require('../services/aiService');
 
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const toISODate = (value) => new Date(value).toISOString().slice(0, 10);
 
-const calculateNumberOfDays = (fromDate, toDate) => {
+const getInclusiveDayCount = (fromDate, toDate) => {
     const start = new Date(fromDate);
     const end = new Date(toDate);
-    const diff = Math.floor((end - start) / DAY_IN_MS) + 1;
-    return diff;
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const diff = Math.round((end.setHours(0, 0, 0, 0) - start.setHours(0, 0, 0, 0)) / msPerDay);
+    return Math.max(1, diff + 1);
 };
 
-const createLeaveRequest = async (req, res) => {
-    const { leaveType, fromDate, toDate, reason } = req.body || {};
+const getBalanceField = (leaveType) => {
+    if (leaveType === 'annual') return 'annual';
+    if (leaveType === 'sick') return 'sick';
+    if (leaveType === 'casual') return 'casual';
+    return 'unpaid';
+};
 
-    if (!leaveType || !fromDate || !toDate || !reason) {
-        return res.status(400).json({ message: 'leaveType, fromDate, toDate, and reason are required' });
-    }
+const calculateRisk = (employee, payload, days) => {
+    const activeLoad = (employee.taskCounts?.active || 0) + (employee.taskCounts?.newTask || 0);
+    const balanceField = getBalanceField(payload.leaveType);
+    const balance = employee.leaveBalance?.[balanceField] ?? 0;
+    let score = 0;
 
-    const numberOfDays = calculateNumberOfDays(fromDate, toDate);
-    if (numberOfDays <= 0) {
-        return res.status(400).json({ message: 'Invalid leave date range' });
-    }
+    if (days >= 5) score += 2;
+    if (days >= 3) score += 1;
+    if (activeLoad >= 4) score += 2;
+    if (activeLoad >= 2) score += 1;
+    if (payload.leaveType !== 'unpaid' && balance < days) score += 3;
+    if (payload.reason && payload.reason.length < 40) score += 1;
 
+    let aiRisk = 'low';
+    if (score >= 5) aiRisk = 'high';
+    else if (score >= 2) aiRisk = 'medium';
+
+    const aiSummary = `Requested ${payload.leaveType} leave for ${days} day(s). Current ${balanceField} balance: ${balance}. Workload snapshot: ${activeLoad} active/queued tasks.`;
+
+    return { aiRisk, aiSummary };
+};
+
+const populateLeave = async (leave) => {
+    return Leave.findById(leave._id)
+        .populate('employee', 'firstName email role department leaveBalance taskCounts')
+        .populate('reviewedBy', 'firstName email role');
+};
+
+const submitLeave = async (req, res) => {
     try {
-        const analysis = await analyzeLeaveRequestWithAI({ leaveType, numberOfDays, reason });
+        const { leaveType, fromDate, toDate, reason } = req.body || {};
 
-        const leaveRequest = await LeaveRequest.create({
-            employee: req.user._id,
+        if (!leaveType || !fromDate || !toDate || !reason?.trim()) {
+            return res.status(400).json({ message: 'leaveType, fromDate, toDate and reason are required' });
+        }
+
+        const employee = await User.findById(req.user._id);
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee not found' });
+        }
+
+        const days = getInclusiveDayCount(fromDate, toDate);
+        const risk = calculateRisk(employee, { leaveType, reason }, days);
+
+        const leave = await Leave.create({
+            employee: employee._id,
             leaveType,
-            fromDate,
-            toDate,
-            numberOfDays,
-            reason,
-            aiSummary: analysis.summary || '',
-            aiRisk: analysis.risk || 'low'
+            fromDate: new Date(fromDate),
+            toDate: new Date(toDate),
+            numberOfDays: days,
+            reason: reason.trim(),
+            status: 'pending',
+            aiRisk: risk.aiRisk,
+            aiSummary: risk.aiSummary
         });
 
-        return res.status(201).json({ message: 'Leave request submitted', data: leaveRequest });
+        const populated = await populateLeave(leave);
+        return res.status(201).json({ message: 'Leave request submitted', data: populated });
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to create leave request', error: error.message });
+        return res.status(500).json({ message: error.message });
     }
 };
 
-const getMyLeaveRequests = async (req, res) => {
+const getMyLeaves = async (req, res) => {
     try {
-        const leaves = await LeaveRequest.find({ employee: req.user._id })
+        const leaves = await Leave.find({ employee: req.user._id })
             .sort({ createdAt: -1 })
-            .populate('approver', 'firstName email role');
+            .populate('employee', 'firstName email role department leaveBalance taskCounts')
+            .populate('reviewedBy', 'firstName email role');
 
-        return res.json({ message: 'My leave requests', data: leaves });
+        return res.json({ data: leaves });
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to fetch leave requests', error: error.message });
+        return res.status(500).json({ message: error.message });
     }
 };
 
-const getAllLeaveRequests = async (req, res) => {
-    const { status, employeeId } = req.query || {};
-    const filter = {};
-
-    if (status) {
-        filter.status = status;
-    }
-    if (employeeId) {
-        filter.employee = employeeId;
-    }
-
+const getAllLeaves = async (req, res) => {
     try {
-        const leaves = await LeaveRequest.find(filter)
+        const leaves = await Leave.find({})
             .sort({ createdAt: -1 })
-            .populate('employee', 'firstName email role department managerId')
-            .populate('approver', 'firstName email role');
+            .populate('employee', 'firstName email role department leaveBalance taskCounts')
+            .populate('reviewedBy', 'firstName email role');
 
-        return res.json({ message: 'Leave requests', data: leaves });
+        return res.json({ data: leaves });
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to fetch leave requests', error: error.message });
+        return res.status(500).json({ message: error.message });
     }
 };
 
 const updateLeaveStatus = async (req, res) => {
-    const { leaveId } = req.params;
-    const { status, approverComment } = req.body || {};
-
-    if (!['approved', 'rejected', 'cancelled'].includes(status)) {
-        return res.status(400).json({ message: 'Invalid status update' });
-    }
-
     try {
-        const leave = await LeaveRequest.findById(leaveId);
+        const { leaveId } = req.params;
+        const { status, managerComment } = req.body || {};
+
+        if (!['approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ message: 'Status must be approved or rejected' });
+        }
+
+        const leave = await Leave.findById(leaveId);
         if (!leave) {
             return res.status(404).json({ message: 'Leave request not found' });
         }
 
-        leave.status = status;
-        leave.approver = req.user._id;
-        leave.approverComment = approverComment || '';
-        await leave.save();
-
-        if (status === 'approved') {
-            const employee = await User.findById(leave.employee);
-            if (employee?.leaveBalance && typeof employee.leaveBalance[leave.leaveType] === 'number') {
-                employee.leaveBalance[leave.leaveType] = Math.max(
-                    0,
-                    employee.leaveBalance[leave.leaveType] - leave.numberOfDays
-                );
-                await employee.save();
-            }
+        const employee = await User.findById(leave.employee);
+        if (!employee) {
+            return res.status(404).json({ message: 'Employee not found' });
         }
 
-        return res.json({ message: `Leave ${status}`, data: leave });
+        const balanceField = getBalanceField(leave.leaveType);
+        const previousStatus = leave.status;
+        const days = leave.numberOfDays || getInclusiveDayCount(leave.fromDate, leave.toDate);
+
+        if (status === 'approved' && previousStatus !== 'approved' && leave.leaveType !== 'unpaid') {
+            const balance = employee.leaveBalance?.[balanceField] ?? 0;
+            if (balance < days) {
+                return res.status(400).json({
+                    message: `Insufficient ${balanceField} leave balance`,
+                    data: { balance, required: days }
+                });
+            }
+            employee.leaveBalance[balanceField] = balance - days;
+            await employee.save();
+        }
+
+        if (status === 'rejected' && previousStatus === 'approved' && leave.leaveType !== 'unpaid') {
+            const balance = employee.leaveBalance?.[balanceField] ?? 0;
+            employee.leaveBalance[balanceField] = balance + days;
+            await employee.save();
+        }
+
+        leave.status = status;
+        leave.reviewedBy = req.user._id;
+        leave.reviewDate = new Date();
+        if (managerComment?.trim()) {
+            leave.managerComment = managerComment.trim();
+        }
+
+        await leave.save();
+
+        const populated = await populateLeave(leave);
+        return res.json({ message: `Leave ${status}`, data: populated });
     } catch (error) {
-        return res.status(500).json({ message: 'Failed to update leave request', error: error.message });
+        return res.status(500).json({ message: error.message });
     }
 };
 
-module.exports = {
-    createLeaveRequest,
-    getMyLeaveRequests,
-    getAllLeaveRequests,
-    updateLeaveStatus
-};
+module.exports = { submitLeave, getMyLeaves, getAllLeaves, updateLeaveStatus };

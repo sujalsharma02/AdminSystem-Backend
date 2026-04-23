@@ -39,7 +39,14 @@ const userSchema = new mongoose.Schema({
         taskTitle: String,
         taskDescription: String,
         taskDate: String,
+        dueDate: { type: String, default: '' },
         category: String,
+        priority: {
+            type: String,
+            enum: ['low', 'medium', 'high', 'critical'],
+            default: 'medium'
+        },
+        escalated: { type: Boolean, default: false },
         comments: [{
             text: { type: String, required: true, trim: true },
             authorName: { type: String, default: 'Admin' },

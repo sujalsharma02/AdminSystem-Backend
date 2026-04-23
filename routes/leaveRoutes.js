@@ -1,19 +1,11 @@
 const express = require('express');
-const {
-    createLeaveRequest,
-    getMyLeaveRequests,
-    getAllLeaveRequests,
-    updateLeaveStatus
-} = require('../controllers/leaveController');
-const { protect, authorizeRoles } = require('../middleware/authMiddleware');
-
 const router = express.Router();
+const { authenticateToken, requireRoles } = require('../middleware/authMiddleware');
+const { submitLeave, getMyLeaves, getAllLeaves, updateLeaveStatus } = require('../controllers/leaveController');
 
-router.use(protect);
-
-router.post('/', authorizeRoles('employee', 'manager', 'hr', 'admin', 'super_admin'), createLeaveRequest);
-router.get('/my', authorizeRoles('employee', 'manager', 'hr', 'admin', 'super_admin'), getMyLeaveRequests);
-router.get('/', authorizeRoles('manager', 'hr', 'admin', 'super_admin'), getAllLeaveRequests);
-router.patch('/:leaveId/status', authorizeRoles('manager', 'hr', 'admin', 'super_admin'), updateLeaveStatus);
+router.post('/', authenticateToken, submitLeave);
+router.get('/my', authenticateToken, getMyLeaves);
+router.get('/', authenticateToken, requireRoles('admin', 'hr', 'manager', 'super_admin'), getAllLeaves);
+router.patch('/:leaveId/status', authenticateToken, requireRoles('admin', 'hr', 'manager', 'super_admin'), updateLeaveStatus);
 
 module.exports = router;
