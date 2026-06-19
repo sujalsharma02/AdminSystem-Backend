@@ -53,6 +53,9 @@ const deleteDocument = async (req, res) => {
             return res.status(404).json({ message: 'Document not found' });
         }
 
+        // Drop the document's embedded chunks from the vector store too.
+        await ragService.removeDocumentChunks(document._id);
+
         return res.json({ message: 'Document deleted', data: document });
     } catch (error) {
         return res.status(500).json({ message: error.message });
