@@ -5,6 +5,8 @@
 const VOYAGE_BASE_URL = process.env.VOYAGE_BASE_URL || 'https://api.voyageai.com/v1';
 const EMBED_MODEL = process.env.VOYAGE_EMBED_MODEL || 'voyage-3.5';
 const RERANK_MODEL = process.env.VOYAGE_RERANK_MODEL || 'rerank-2.5-lite';
+// Output dimension for the embeddings; must match the Atlas vector index.
+const EMBED_DIM = Number(process.env.VOYAGE_OUTPUT_DIM) || 1024;
 
 // Voyage accepts at most 128 inputs per embeddings request.
 const MAX_BATCH = 128;
@@ -58,7 +60,8 @@ const embedTexts = async (texts, inputType = 'document') => {
         const payload = await callVoyage('/embeddings', {
             input: batch,
             model: EMBED_MODEL,
-            input_type: inputType
+            input_type: inputType,
+            output_dimension: EMBED_DIM
         });
 
         const ordered = (payload.data || [])
@@ -107,5 +110,6 @@ module.exports = {
     embedQuery,
     rerank,
     EMBED_MODEL,
-    RERANK_MODEL
+    RERANK_MODEL,
+    EMBED_DIM
 };

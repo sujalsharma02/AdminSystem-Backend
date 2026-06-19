@@ -193,6 +193,7 @@ const askDocs = async (req, res) => {
                 retrieval: {
                     method: retrieval.method,
                     embeddingModel: retrieval.model,
+                    reranked: retrieval.reranked,
                     generator: generated.source
                 }
             }

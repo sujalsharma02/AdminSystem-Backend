@@ -1,22 +1,5 @@
 const mongoose = require('mongoose');
 
-// A single embedded slice of a document. The vector is produced by the
-// Voyage AI embeddings model and used for similarity search at query time.
-const chunkSchema = new mongoose.Schema({
-    index: {
-        type: Number,
-        required: true
-    },
-    text: {
-        type: String,
-        required: true
-    },
-    embedding: {
-        type: [Number],
-        default: []
-    }
-}, { _id: false });
-
 const documentSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -27,10 +10,11 @@ const documentSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
-    // RAG index metadata.
-    chunks: {
-        type: [chunkSchema],
-        default: []
+    // RAG index metadata. The embedded chunks themselves live in the
+    // DocumentChunk collection so Atlas Vector Search can query them.
+    chunkCount: {
+        type: Number,
+        default: 0
     },
     embeddingModel: {
         type: String,
