@@ -1,5 +1,6 @@
 const multer = require('multer');
 const Document = require('../models/Document');
+const ragService = require('../services/ragService');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -35,6 +36,10 @@ const uploadDocument = async (req, res) => {
             source: source || (file ? 'upload' : 'manual')
         });
 
+        // Build the RAG index (embed chunks via Voyage). Best-effort: a
+        // failure here is logged inside the service and never blocks upload.
+        await ragService.indexDocument(document);
+
         return res.status(201).json({ data: document });
     } catch (error) {
         return res.status(500).json({ message: error.message });
@@ -54,4 +59,15 @@ const deleteDocument = async (req, res) => {
     }
 };
 
-module.exports = { upload, listDocuments, uploadDocument, deleteDocument };
+// (Re)build the Voyage embeddings index for every document. Useful after
+// enabling Voyage or for documents that were created before indexing existed.
+const reindexDocuments = async (req, res) => {
+    try {
+        const summary = await ragService.reindexAll();
+        return res.json({ message: 'Reindex complete', data: summary });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { upload, listDocuments, uploadDocument, deleteDocument, reindexDocuments };
